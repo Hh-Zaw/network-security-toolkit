@@ -1,0 +1,110 @@
+```python
+#!/usr/bin/env python3
+"""
+Simple Port Scanner
+Author: Hein Htet Zaw
+Date: May 2025
+Description: Fast multi-threaded port scanner for security assessments
+"""
+
+import socket
+import sys
+import threading
+from datetime import datetime
+import argparse
+from queue import Queue
+
+# ASCII Banner
+print(r"""
+ ____            _     ____                                  
+|  _ \ ___  _ __| |_  / ___|  ___ __ _ _ __  _ __   ___ _ __ 
+| |_) / _ \| '__| __| \___ \ / __/ _` | '_ \| '_ \ / _ \ '__|
+|  __/ (_) | |  | |_   ___) | (_| (_| | | | | | | |  __/ |   
+|_|   \___/|_|   \__| |____/ \___\__,_|_| |_|_| |_|\___|_|   
+                    
+                    Security Assessment Tool v1.0
+""")
+
+# Thread queue
+q = Queue()
+open_ports = []
+
+def scan_port(host, port):
+    """Scan a single port on the target host"""
+    try:
+        # Create socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        
+        # Attempt connection
+        result = sock.connect_ex((host, port))
+        sock.close()
+        
+        if result == 0:
+            try:
+                service = socket.getservbyport(port)
+            except:
+                service = "unknown"
+            
+            open_ports.append(port)
+            print(f"[+] Port {port}: Open ({service})")
+            
+    except socket.gaierror:
+        print(f"[-] Hostname {host} could not be resolved")
+        sys.exit()
+    except socket.error:
+        print(f"[-] Could not connect to {host}")
+        sys.exit()
+
+def worker(host):
+    """Thread worker function"""
+    while True:
+        port = q.get()
+        scan_port(host, port)
+        q.task_done()
+
+def main():
+    # Argument parsing
+    parser = argparse.ArgumentParser(description="Simple port scanner")
+    parser.add_argument("host", help="Target host to scan")
+    parser.add_argument("-p", "--ports", default="1-1000", 
+                       help="Port range to scan (default: 1-1000)")
+    parser.add_argument("-t", "--threads", type=int, default=100,
+                       help="Number of threads (default: 100)")
+    
+    args = parser.parse_args()
+    
+    # Parse port range
+    if "-" in args.ports:
+        start_port, end_port = map(int, args.ports.split("-"))
+    else:
+        start_port = end_port = int(args.ports)
+    
+    print(f"\n[*] Starting scan on {args.host}")
+    print(f"[*] Scanning ports {start_port} to {end_port}")
+    print(f"[*] Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+    
+    # Create thread pool
+    for _ in range(args.threads):
+        t = threading.Thread(target=worker, args=(args.host,))
+        t.daemon = True
+        t.start()
+    
+    # Add ports to queue
+    for port in range(start_port, end_port + 1):
+        q.put(port)
+    
+    # Wait for completion
+    q.join()
+    
+    # Summary
+    print(f"\n[*] Scan complete!")
+    print(f"[*] {len(open_ports)} open ports found")
+    print(f"[*] End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n[!] Scan interrupted by user")
+        sys.exit(0)
